@@ -298,3 +298,25 @@ def test_pre_filter_run_word_boundary_not_substring():
     event = _norm_event(name="Founders Running Club")
     result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
     assert len(result) == 1
+
+
+def test_classify_events_keeps_approved_ids():
+    event_a = _norm_event(name="Underscore VC Pitch Night", url="https://lu.ma/a1")
+    event_b = _norm_event(name="Generic Networking", url="https://lu.ma/b2")
+    event_c = _norm_event(name="MassChallenge Demo Day", url="https://lu.ma/c3")
+    with patch("events.call_groq", return_value="[0, 2]"):
+        result = events.classify_events([event_a, event_b, event_c])
+    assert len(result) == 2
+    assert result[0]["url"] == "https://lu.ma/a1"
+    assert result[1]["url"] == "https://lu.ma/c3"
+
+
+def test_classify_events_fallback_on_bad_json():
+    events_in = [_norm_event(name="Founder Mixer", url="https://lu.ma/x")]
+    with patch("events.call_groq", return_value="not json"):
+        result = events.classify_events(events_in)
+    assert len(result) == 1
+
+
+def test_classify_events_empty_input():
+    assert events.classify_events([]) == []

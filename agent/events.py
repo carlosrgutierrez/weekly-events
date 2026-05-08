@@ -457,3 +457,47 @@ def pre_filter(event_list: list, memory: dict, config: dict) -> list:
         results.append(event)
 
     return results
+
+
+# ── CLASSIFY ───────────────────────────────────────────────────────────────────
+
+_CLASSIFY_SYSTEM = f"""You are a classifier for a Boston startup ecosystem event digest.
+
+{IMS_CONTEXT}
+
+You will receive a numbered list of events in the format: [N] EventName | OrganizerName
+
+Return a JSON array of integer IDs (0-indexed) for events that should be included.
+Include an event if it clearly involves founders, investors, operators, or technically
+ambitious builders gathering in Boston.
+
+Reject: generic tech meetups with no startup focus, academic seminars without commercialization
+angle, wellness/lifestyle events, crypto/NFT without equity/VC angle.
+
+Return ONLY a JSON array like [0, 3, 5] or [] if none qualify. No other text."""
+
+
+def classify_events(event_list: list) -> list:
+    if not event_list:
+        return []
+
+    lines = []
+    for i, event in enumerate(event_list):
+        name = event.get("name", "")[:100]
+        org  = event.get("organizer_name", "")[:60]
+        lines.append(f"[{i}] {name} | {org}")
+
+    block = "\n".join(lines)
+    if len(block) > MAX_CLASSIFY_BLOCK:
+        block = block[:MAX_CLASSIFY_BLOCK]
+
+    raw = call_groq(_CLASSIFY_SYSTEM, block)
+    approved_ids = parse_json_response(raw, fallback=list(range(len(event_list))))
+
+    if not isinstance(approved_ids, list):
+        approved_ids = list(range(len(event_list)))
+
+    valid_ids = [i for i in approved_ids if isinstance(i, int) and 0 <= i < len(event_list)]
+    result = [event_list[i] for i in valid_ids]
+    print(f"[CLASSIFY] {len(result)}/{len(event_list)} events approved")
+    return result

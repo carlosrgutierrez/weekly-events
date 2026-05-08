@@ -136,3 +136,75 @@ def parse_json_response(text: str, fallback):
     except (json.JSONDecodeError, ValueError):
         print(f"[WARN] Failed to parse JSON: {text[:200]}")
         return fallback
+
+
+# ── Config + memory ────────────────────────────────────────────────────────────
+
+def load_config() -> dict:
+    with open(CONFIG_PATH) as f:
+        config = json.load(f)
+    print(f"[CONFIG] geo={config['geo_latitude']},{config['geo_longitude']} "
+          f"radius={config['geo_radius_km']}km window={config['window_days']}d")
+    return config
+
+
+def load_memory() -> dict:
+    if not os.path.exists(MEMORY_PATH):
+        return {"processed_urls": [], "last_run": None}
+    with open(MEMORY_PATH) as f:
+        return json.load(f)
+
+
+def save_memory(memory: dict) -> None:
+    with open(MEMORY_PATH, "w") as f:
+        json.dump(memory, f, indent=2)
+
+
+def trim_memory(memory: dict) -> dict:
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=7)).isoformat()
+    memory["processed_urls"] = [
+        e for e in memory.get("processed_urls", [])
+        if e.get("date_seen", "9999-99-99") >= cutoff
+    ]
+    return memory
+
+
+def _update_memory(memory: dict, extracted: list) -> None:
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    existing = {e["url"] for e in memory["processed_urls"]}
+    for event in extracted:
+        url = event.get("url", "")
+        if url and url not in existing:
+            memory["processed_urls"].append({"url": url, "date_seen": today})
+            existing.add(url)
+
+
+# ── Discord ────────────────────────────────────────────────────────────────────
+
+def post_to_discord(message: str) -> None:
+    webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
+    for chunk in _split_message(message):
+        resp = requests.post(webhook_url, json={"content": chunk}, timeout=10)
+        resp.raise_for_status()
+        print(f"[DISCORD] Posted {len(chunk)} chars")
+
+
+def _split_message(message: str, max_len: int = 1900) -> list:
+    if len(message) <= max_len:
+        return [message]
+    chunks = []
+    current_blocks = []
+    current_len = 0
+    for block in message.split("\n\n"):
+        block_len = len(block) + 2
+        if current_len + block_len > max_len and current_blocks:
+            chunks.append("\n\n".join(current_blocks))
+            current_blocks = [block]
+            current_len = block_len
+        else:
+            current_blocks.append(block)
+            current_len += block_len
+    if current_blocks:
+        chunks.append("\n\n".join(current_blocks))
+    return chunks

@@ -302,3 +302,98 @@ def fetch_tnt_events(config: dict) -> list:
 
     print(f"[TNT] Scraped {len(results)} raw entries")
     return results
+
+
+# ── NORMALIZE ──────────────────────────────────────────────────────────────────
+
+def normalize_luma_event(entry: dict):
+    event = entry.get("event", {})
+    name = sanitize(event.get("name", ""))
+    if not name or name == "[REDACTED]":
+        return None
+
+    url_slug = event.get("url", "")
+    if not url_slug:
+        return None
+    full_url = url_slug if url_slug.startswith("http") else f"https://lu.ma/{url_slug}"
+
+    calendar = entry.get("calendar") or {}
+    ticket_info = entry.get("ticket_info") or {}
+    hosts = entry.get("hosts") or []
+    featured_guests = entry.get("featured_guests") or []
+
+    host_names = [
+        sanitize(h.get("name", ""))[:MAX_HOST_BIO_CHARS]
+        for h in hosts[:3]
+    ]
+    guest_bios = [
+        sanitize(g.get("bio_short", ""))[:MAX_GUEST_BIO_CHARS]
+        for g in featured_guests[:3]
+    ]
+
+    return {
+        "name": name,
+        "start_at": event.get("start_at", ""),
+        "timezone": event.get("timezone", "America/New_York"),
+        "city": (event.get("geo_address_info") or {}).get("city_state", ""),
+        "url": full_url,
+        "source": "luma",
+        "location_type": event.get("location_type", "offline"),
+        "organizer_name": sanitize(calendar.get("name", "")),
+        "organizer_desc": sanitize(calendar.get("description_short", ""))[:MAX_ORGANIZER_DESC],
+        "guest_count": int(entry.get("guest_count") or 0),
+        "require_approval": bool(ticket_info.get("require_approval")),
+        "verified": bool(calendar.get("verified_at")),
+        "luma_plus": bool(calendar.get("luma_plus_active")),
+        "host_names": [h for h in host_names if h and h != "[REDACTED]"],
+        "guest_bios": [b for b in guest_bios if b and b != "[REDACTED]"],
+    }
+
+
+def normalize_tnt_event(entry: dict):
+    name = (entry.get("name") or "").strip()
+    url = (entry.get("url") or "").strip()
+    if not name or not url:
+        return None
+
+    start_at = _parse_tnt_date(entry.get("date_text", ""))
+
+    return {
+        "name": name[:MAX_NAME_CHARS],
+        "start_at": start_at,
+        "timezone": "America/New_York",
+        "city": "Boston, MA",
+        "url": url,
+        "source": "tnt",
+        "location_type": "offline",
+        "organizer_name": "TNT",
+        "organizer_desc": "",
+        "guest_count": 0,
+        "require_approval": False,
+        "verified": True,
+        "luma_plus": False,
+        "host_names": [],
+        "guest_bios": [],
+    }
+
+
+def _parse_tnt_date(date_text: str) -> str:
+    """Best-effort parse of free-form date text from TNT HTML. Returns ISO UTC string or ''."""
+    if not date_text:
+        return ""
+    months = {
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    m = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{1,2})(?:\s+(\d{4}))?",
+                  date_text, re.IGNORECASE)
+    if not m:
+        return ""
+    month = months[m.group(1).lower()[:3]]
+    day = int(m.group(2))
+    year = int(m.group(3)) if m.group(3) else datetime.now(timezone.utc).year
+    try:
+        dt = datetime(year, month, day, 18, 0, tzinfo=timezone.utc)
+        return dt.isoformat()
+    except ValueError:
+        return ""

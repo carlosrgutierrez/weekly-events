@@ -171,3 +171,44 @@ def test_fetch_tnt_returns_empty_on_error():
     with patch("events.requests.get", side_effect=Exception("timeout")):
         result = events.fetch_tnt_events({"tnt_enabled": True})
     assert result == []
+
+
+def test_normalize_luma_event_valid():
+    entry = _luma_entry(name="Founder Mixer", url="founder-mixer",
+                        start_at="2026-05-13T22:00:00Z")
+    result = events.normalize_luma_event(entry)
+    assert result is not None
+    assert result["name"] == "Founder Mixer"
+    assert result["url"] == "https://lu.ma/founder-mixer"
+    assert result["source"] == "luma"
+    assert result["verified"] is True
+    assert result["luma_plus"] is True
+    assert result["organizer_name"] == "Underscore VC"
+
+
+def test_normalize_luma_event_online_keeps_location_type():
+    entry = _luma_entry(location_type="online")
+    result = events.normalize_luma_event(entry)
+    assert result is not None
+    assert result["location_type"] == "online"
+
+
+def test_normalize_luma_event_missing_url_returns_none():
+    entry = _luma_entry()
+    entry["event"]["url"] = ""
+    assert events.normalize_luma_event(entry) is None
+
+
+def test_normalize_tnt_event_valid():
+    raw = {"name": "TNT Demo Day", "url": "https://partiful.com/e/abc",
+           "date_text": "Tue May 27 TNT Demo Day", "source": "tnt"}
+    result = events.normalize_tnt_event(raw)
+    assert result is not None
+    assert result["source"] == "tnt"
+    assert result["url"] == "https://partiful.com/e/abc"
+    assert result["verified"] is True
+
+
+def test_normalize_tnt_event_missing_name_returns_none():
+    raw = {"name": "", "url": "https://lu.ma/abc", "date_text": "", "source": "tnt"}
+    assert events.normalize_tnt_event(raw) is None

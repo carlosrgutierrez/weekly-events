@@ -91,3 +91,45 @@ MEMORY_PATH = os.path.join(os.path.dirname(__file__), "memory.json")
 
 LUMA_API = "https://api.lu.ma/discover/get-paginated-events"
 TNT_URL  = "https://www.tnt.so/events"
+
+# ── Utilities ──────────────────────────────────────────────────────────────────
+
+def sanitize(text: str) -> str:
+    if not text:
+        return ""
+    for pattern in INJECTION_PATTERNS:
+        if re.search(pattern, str(text), re.IGNORECASE):
+            print(f"[SECURITY] Injection pattern detected, redacting field.")
+            return "[REDACTED]"
+    return str(text)[:500]
+
+
+_groq_client = None
+
+def _get_groq() -> Groq:
+    global _groq_client
+    if _groq_client is None:
+        _groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    return _groq_client
+
+
+def call_groq(system: str, user: str) -> str:
+    client = _get_groq()
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=0,
+    )
+    return response.choices[0].message.content.strip()
+
+
+def parse_json_response(text: str, fallback):
+    try:
+        cleaned = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
+        return json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        print(f"[WARN] Failed to parse JSON: {text[:200]}")
+        return fallback

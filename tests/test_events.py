@@ -381,3 +381,63 @@ def test_extract_events_resolves_url_from_source():
     assert len(result) == 1
     assert result[0]["url"] == "https://lu.ma/pitch"
     assert result[0]["short_name"] == "Pitch Night"
+
+
+def test_dedupe_events_removes_duplicate_urls():
+    a = _extracted_event(url="https://lu.ma/same")
+    b = _extracted_event(url="https://lu.ma/same")
+    result = events.dedupe_events([a, b])
+    assert len(result) == 1
+
+
+def test_dedupe_events_keeps_different_urls():
+    a = _extracted_event(url="https://lu.ma/aaa")
+    b = _extracted_event(url="https://lu.ma/bbb")
+    result = events.dedupe_events([a, b])
+    assert len(result) == 2
+
+
+def test_format_message_high_before_medium():
+    high = _extracted_event(signal="HIGH", short_name="VC Dinner",
+                            day_str="Wed May 14", url="https://lu.ma/a")
+    medium = _extracted_event(signal="MEDIUM", short_name="Tech Meetup",
+                              day_str="Mon May 12", url="https://lu.ma/b")
+    msg = events.format_message([medium, high])
+    assert msg.index("VC Dinner") < msg.index("Tech Meetup")
+
+
+def test_format_message_within_signal_sorted_by_date():
+    earlier = _extracted_event(signal="HIGH", short_name="Monday Event",
+                               day_str="Mon May 12", url="https://lu.ma/a")
+    later = _extracted_event(signal="HIGH", short_name="Friday Event",
+                             day_str="Fri May 16", url="https://lu.ma/b")
+    msg = events.format_message([later, earlier])
+    assert msg.index("Monday Event") < msg.index("Friday Event")
+
+
+def test_format_message_with_intro():
+    event = _extracted_event(short_name="Demo Day", day_str="Tue May 13",
+                             url="https://lu.ma/demo")
+    msg = events.format_message([event], intro_line="Big week for Boston founders.")
+    assert msg.startswith("Big week for Boston founders.")
+    assert "Demo Day" in msg
+
+
+def test_format_message_no_intro():
+    event = _extracted_event(short_name="Demo Day", day_str="Tue May 13",
+                             url="https://lu.ma/demo")
+    msg = events.format_message([event])
+    assert msg.startswith("Demo Day")
+
+
+def test_format_message_contains_url():
+    event = _extracted_event(url="https://lu.ma/pitch-night")
+    msg = events.format_message([event])
+    assert "https://lu.ma/pitch-night" in msg
+
+
+def test_format_message_no_trailing_blank_line():
+    event = _extracted_event()
+    msg = events.format_message([event])
+    assert not msg.endswith("\n\n")
+    assert not msg.endswith("\n")

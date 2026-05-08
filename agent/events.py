@@ -598,3 +598,46 @@ def validate_extracted_events(extracted: list, source_events: list) -> list:
             continue
         valid.append(event)
     return valid
+
+
+# ── DEDUPE ─────────────────────────────────────────────────────────────────────
+
+def dedupe_events(event_list: list) -> list:
+    seen = set()
+    result = []
+    for event in event_list:
+        url = event.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            result.append(event)
+    return result
+
+
+# ── FORMAT ─────────────────────────────────────────────────────────────────────
+
+_MONTH_NUMS = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
+
+
+def _day_sort_key(event: dict) -> tuple:
+    signal_order = 0 if event.get("signal") == "HIGH" else 1
+    day_str = event.get("day_str", "")
+    m = re.match(r"\w+ (\w+) (\d+)", day_str)
+    if m:
+        month = _MONTH_NUMS.get(m.group(1), 99)
+        day = int(m.group(2))
+        return (signal_order, month, day)
+    return (signal_order, 99, 99)
+
+
+def format_message(event_list: list, intro_line: str = "") -> str:
+    sorted_events = sorted(event_list, key=_day_sort_key)
+    blocks = []
+    if intro_line:
+        blocks.append(intro_line)
+    for event in sorted_events:
+        block = f"{event['short_name']}\n{event['time_str']} {event['day_str']}\n{event['url']}"
+        blocks.append(block)
+    return "\n\n".join(blocks)

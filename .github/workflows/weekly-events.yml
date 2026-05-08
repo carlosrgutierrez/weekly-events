@@ -1,0 +1,31 @@
+name: Weekly Boston Ecosystem Events
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"   # Monday 1pm UTC = 9am Boston EDT
+  workflow_dispatch:         # manual trigger for testing
+
+permissions:
+  contents: write
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r agent/requirements.txt
+      - name: Run events agent
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python agent/events.py
+      - name: Commit updated memory
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add agent/memory.json
+          git diff --staged --quiet || git commit -m "chore: update memory [skip ci]"
+          git push

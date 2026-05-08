@@ -5,6 +5,7 @@
   "geo_radius_km": 30,
   "window_days": 7,
   "max_events": 15,
+  "min_score": 5,
   "tnt_enabled": true,
   "extra_keyword_allow": [],
   "extra_keyword_deny": []

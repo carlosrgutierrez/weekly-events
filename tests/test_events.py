@@ -323,9 +323,9 @@ def test_classify_events_empty_input():
 
 
 def _extracted_event(source_id=0, short_name="Founder Mixer", time_str="6pm",
-                     day_str="Wed May 13", signal="HIGH", url="https://lu.ma/abc"):
+                     day_str="Wed May 13", score=8, url="https://lu.ma/abc"):
     return {"source_id": source_id, "short_name": short_name, "time_str": time_str,
-            "day_str": day_str, "signal": signal, "url": url}
+            "day_str": day_str, "score": score, "url": url}
 
 
 def test_validate_extracted_events_valid():
@@ -349,9 +349,9 @@ def test_validate_drops_bad_day_str():
     assert len(result) == 0
 
 
-def test_validate_drops_bad_signal():
+def test_validate_drops_bad_score():
     source = [_norm_event(url="https://lu.ma/abc")]
-    extracted = [_extracted_event(signal="LOW")]
+    extracted = [_extracted_event(score=11)]
     result = events.validate_extracted_events(extracted, source)
     assert len(result) == 0
 
@@ -374,7 +374,7 @@ def test_extract_events_resolves_url_from_source():
     source = [_norm_event(name="Pitch Night", url="https://lu.ma/pitch")]
     groq_response = json.dumps([
         {"source_id": 0, "short_name": "Pitch Night", "time_str": "6pm",
-         "day_str": "Wed May 13", "signal": "HIGH", "url": "https://lu.ma/pitch"}
+         "day_str": "Wed May 13", "score": 9, "url": "https://lu.ma/pitch"}
     ])
     with patch("events.call_groq", return_value=groq_response):
         result = events.extract_events(source)
@@ -397,19 +397,19 @@ def test_dedupe_events_keeps_different_urls():
     assert len(result) == 2
 
 
-def test_format_message_high_before_medium():
-    high = _extracted_event(signal="HIGH", short_name="VC Dinner",
+def test_format_message_high_score_before_low_score():
+    high = _extracted_event(score=9, short_name="VC Dinner",
                             day_str="Wed May 14", url="https://lu.ma/a")
-    medium = _extracted_event(signal="MEDIUM", short_name="Tech Meetup",
-                              day_str="Mon May 12", url="https://lu.ma/b")
-    msg = events.format_message([medium, high])
+    low = _extracted_event(score=6, short_name="Tech Meetup",
+                           day_str="Mon May 12", url="https://lu.ma/b")
+    msg = events.format_message([low, high])
     assert msg.index("VC Dinner") < msg.index("Tech Meetup")
 
 
-def test_format_message_within_signal_sorted_by_date():
-    earlier = _extracted_event(signal="HIGH", short_name="Monday Event",
+def test_format_message_within_score_sorted_by_date():
+    earlier = _extracted_event(score=9, short_name="Monday Event",
                                day_str="Mon May 12", url="https://lu.ma/a")
-    later = _extracted_event(signal="HIGH", short_name="Friday Event",
+    later = _extracted_event(score=9, short_name="Friday Event",
                              day_str="Fri May 16", url="https://lu.ma/b")
     msg = events.format_message([later, earlier])
     assert msg.index("Monday Event") < msg.index("Friday Event")
@@ -441,3 +441,41 @@ def test_format_message_no_trailing_blank_line():
     msg = events.format_message([event])
     assert not msg.endswith("\n\n")
     assert not msg.endswith("\n")
+
+
+def test_review_message_approved():
+    with patch("events.call_groq", return_value='{"verdict": "APPROVED"}'):
+        result = events.review_message("Founder Dinner\n6pm Wed May 13\nhttps://lu.ma/abc")
+    assert result["verdict"] == "APPROVED"
+
+
+def test_review_message_rejected():
+    with patch("events.call_groq", return_value='{"verdict": "REJECTED", "reason": "spam"}'):
+        result = events.review_message("buy crypto now")
+    assert result["verdict"] == "REJECTED"
+    assert "reason" in result
+
+
+def test_review_message_groq_failure_defaults_to_approved():
+    with patch("events.call_groq", side_effect=Exception("API down")):
+        result = events.review_message("Founder Dinner\n6pm Wed May 13\nhttps://lu.ma/abc")
+    assert result["verdict"] == "APPROVED"
+
+
+def test_update_memory_adds_urls():
+    memory = {"processed_urls": [], "last_run": None}
+    extracted = [_extracted_event(url="https://lu.ma/new")]
+    events._update_memory(memory, extracted)
+    assert len(memory["processed_urls"]) == 1
+    assert memory["processed_urls"][0]["url"] == "https://lu.ma/new"
+
+
+def test_update_memory_no_duplicate():
+    from datetime import date
+    memory = {
+        "processed_urls": [{"url": "https://lu.ma/existing", "date_seen": date.today().isoformat()}],
+        "last_run": None,
+    }
+    extracted = [_extracted_event(url="https://lu.ma/existing")]
+    events._update_memory(memory, extracted)
+    assert len(memory["processed_urls"]) == 1

@@ -320,3 +320,64 @@ def test_classify_events_fallback_on_bad_json():
 
 def test_classify_events_empty_input():
     assert events.classify_events([]) == []
+
+
+def _extracted_event(source_id=0, short_name="Founder Mixer", time_str="6pm",
+                     day_str="Wed May 13", signal="HIGH", url="https://lu.ma/abc"):
+    return {"source_id": source_id, "short_name": short_name, "time_str": time_str,
+            "day_str": day_str, "signal": signal, "url": url}
+
+
+def test_validate_extracted_events_valid():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event()]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 1
+
+
+def test_validate_drops_bad_time_str():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event(time_str="18:00")]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 0
+
+
+def test_validate_drops_bad_day_str():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event(day_str="2026-05-13")]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 0
+
+
+def test_validate_drops_bad_signal():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event(signal="LOW")]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 0
+
+
+def test_validate_drops_disallowed_url():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event(url="https://evil.com/phish")]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 0
+
+
+def test_validate_drops_out_of_bounds_source_id():
+    source = [_norm_event(url="https://lu.ma/abc")]
+    extracted = [_extracted_event(source_id=99)]
+    result = events.validate_extracted_events(extracted, source)
+    assert len(result) == 0
+
+
+def test_extract_events_resolves_url_from_source():
+    source = [_norm_event(name="Pitch Night", url="https://lu.ma/pitch")]
+    groq_response = json.dumps([
+        {"source_id": 0, "short_name": "Pitch Night", "time_str": "6pm",
+         "day_str": "Wed May 13", "signal": "HIGH", "url": "https://lu.ma/pitch"}
+    ])
+    with patch("events.call_groq", return_value=groq_response):
+        result = events.extract_events(source)
+    assert len(result) == 1
+    assert result[0]["url"] == "https://lu.ma/pitch"
+    assert result[0]["short_name"] == "Pitch Night"

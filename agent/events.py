@@ -501,3 +501,100 @@ def classify_events(event_list: list) -> list:
     result = [event_list[i] for i in valid_ids]
     print(f"[CLASSIFY] {len(result)}/{len(event_list)} events approved")
     return result
+
+
+# ── EXTRACT ────────────────────────────────────────────────────────────────────
+
+_EXTRACT_SYSTEM = f"""You are extracting structured data for a Boston startup ecosystem event digest.
+
+{IMS_CONTEXT}
+
+For each event in the input JSON array, return a JSON array with one object per event:
+{{
+  "source_id": <integer — the index of the event in the input array>,
+  "short_name": "<2-5 word natural shortening of the actual event name>",
+  "time_str": "<e.g. 6:30pm or 9am>",
+  "day_str": "<e.g. Wed May 13>",
+  "signal": "HIGH" or "MEDIUM",
+  "url": "<copy url exactly from source — never construct or guess>"
+}}
+
+Rules:
+- short_name must be a natural shortening of the actual name, not an invented label
+- time_str must match pattern: digits + optional :mm + am/pm (e.g. "6pm", "6:30pm", "10am")
+- day_str must match pattern: 3-letter day + month name + day number (e.g. "Wed May 13")
+- url must be copied exactly from the source — never construct or infer
+- signal HIGH: VC/accelerator organizer, require_approval=true with verified organizer, named investors in guest bios
+- signal MEDIUM: AI/tech focus, decent guest count, recognized organization
+- Return ONLY the JSON array, no other text."""
+
+
+def extract_events(event_list: list) -> list:
+    if not event_list:
+        return []
+
+    input_data = []
+    for i, event in enumerate(event_list):
+        input_data.append({
+            "index": i,
+            "name": event.get("name", "")[:MAX_NAME_CHARS],
+            "organizer_name": event.get("organizer_name", ""),
+            "organizer_desc": event.get("organizer_desc", "")[:MAX_ORGANIZER_DESC],
+            "guest_count": event.get("guest_count", 0),
+            "require_approval": event.get("require_approval", False),
+            "verified": event.get("verified", False),
+            "luma_plus": event.get("luma_plus", False),
+            "host_names": event.get("host_names", []),
+            "guest_bios": event.get("guest_bios", []),
+            "url": event.get("url", ""),
+            "start_at": event.get("start_at", ""),
+        })
+
+    user_content = json.dumps(input_data)
+    if len(user_content) > MAX_EXTRACT_BLOCK:
+        user_content = user_content[:MAX_EXTRACT_BLOCK]
+
+    raw = call_groq(_EXTRACT_SYSTEM, user_content)
+    extracted = parse_json_response(raw, fallback=[])
+
+    if not isinstance(extracted, list):
+        extracted = []
+
+    remapped = []
+    for item in extracted:
+        sid = item.get("source_id")
+        if isinstance(sid, int) and 0 <= sid < len(event_list):
+            item["url"] = event_list[sid]["url"]  # always use Python-resolved URL
+        remapped.append(item)
+
+    print(f"[EXTRACT] {len(remapped)} events extracted")
+    return remapped
+
+
+def validate_extracted_events(extracted: list, source_events: list) -> list:
+    valid = []
+    max_id = len(source_events) - 1
+    for event in extracted:
+        sid = event.get("source_id")
+        if not isinstance(sid, int) or sid < 0 or sid > max_id:
+            print(f"[VALIDATE] Bad source_id={sid}, dropping")
+            continue
+        short_name = event.get("short_name", "")
+        if not short_name or "\x00" in short_name:
+            print(f"[VALIDATE] Bad short_name, dropping")
+            continue
+        if not TIME_RE.match(event.get("time_str", "")):
+            print(f"[VALIDATE] Bad time_str={event.get('time_str')}, dropping")
+            continue
+        if not DAY_RE.match(event.get("day_str", "")):
+            print(f"[VALIDATE] Bad day_str={event.get('day_str')}, dropping")
+            continue
+        if event.get("signal") not in ("HIGH", "MEDIUM"):
+            print(f"[VALIDATE] Bad signal={event.get('signal')}, dropping")
+            continue
+        url = event.get("url", "")
+        if not url or not any(d in url for d in ALLOWED_URL_DOMAINS):
+            print(f"[VALIDATE] URL not in whitelist: {url}, dropping")
+            continue
+        valid.append(event)
+    return valid

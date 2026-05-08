@@ -397,3 +397,63 @@ def _parse_tnt_date(date_text: str) -> str:
         return dt.isoformat()
     except ValueError:
         return ""
+
+
+# ── PRE-FILTER ────────────────────────────────────────────────────────────────
+
+def pre_filter(event_list: list, memory: dict, config: dict) -> list:
+    now_utc = datetime.now(timezone.utc)
+    window_end = now_utc + timedelta(days=config["window_days"])
+    processed_urls = {e["url"] for e in memory.get("processed_urls", [])}
+
+    extra_allow = [k.lower() for k in config.get("extra_keyword_allow", [])]
+    extra_deny  = [k.lower() for k in config.get("extra_keyword_deny", [])]
+
+    results = []
+    for event in event_list:
+        name_lower = event["name"].lower()
+        org_lower  = (event.get("organizer_name", "") + " " +
+                      event.get("organizer_desc", "")).lower()
+        source     = event.get("source", "luma")
+
+        # Date gate
+        start_at = event.get("start_at", "")
+        if start_at:
+            try:
+                start_dt = datetime.fromisoformat(
+                    start_at.replace("Z", "+00:00")
+                )
+                if start_dt <= now_utc or start_dt > window_end:
+                    continue
+            except ValueError:
+                if source != "tnt":
+                    continue
+
+        # Location gate (Luma only)
+        if source == "luma" and event.get("location_type") == "online":
+            continue
+
+        # Duplicate URL drop
+        if event.get("url") in processed_urls:
+            continue
+
+        if source != "tnt":
+            # Lifestyle keyword drop (word boundary matching)
+            lifestyle_hit = False
+            for kw in LIFESTYLE_KEYWORDS + extra_deny:
+                pattern = r"\b" + re.escape(kw) + r"\b"
+                if re.search(pattern, name_lower, re.IGNORECASE):
+                    lifestyle_hit = True
+                    break
+            if lifestyle_hit:
+                continue
+
+            # Startup keyword gate
+            all_keywords = STARTUP_KEYWORDS + extra_allow
+            searchable = name_lower + " " + org_lower
+            if not any(kw in searchable for kw in all_keywords):
+                continue
+
+        results.append(event)
+
+    return results

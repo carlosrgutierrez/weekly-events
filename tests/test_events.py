@@ -212,3 +212,89 @@ def test_normalize_tnt_event_valid():
 def test_normalize_tnt_event_missing_name_returns_none():
     raw = {"name": "", "url": "https://lu.ma/abc", "date_text": "", "source": "tnt"}
     assert events.normalize_tnt_event(raw) is None
+
+
+from datetime import date, datetime, timedelta, timezone
+
+
+def _norm_event(name="Founder Mixer", source="luma", start_offset_days=3,
+                location_type="offline", url="https://lu.ma/abc"):
+    start = datetime.now(timezone.utc) + timedelta(days=start_offset_days)
+    return {
+        "name": name, "source": source, "url": url,
+        "start_at": start.isoformat(),
+        "location_type": location_type,
+        "organizer_name": "Test Org", "organizer_desc": "community events",
+        "guest_count": 20, "require_approval": False,
+        "verified": False, "luma_plus": False,
+        "host_names": [], "guest_bios": [],
+        "city": "Boston, MA", "timezone": "America/New_York",
+    }
+
+
+EMPTY_MEMORY = {"processed_urls": [], "last_run": None}
+DEFAULT_CONFIG = {"window_days": 7, "extra_keyword_allow": [], "extra_keyword_deny": []}
+
+
+def test_pre_filter_keeps_valid_startup_event():
+    event = _norm_event(name="Seed Stage Founder Happy Hour")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 1
+
+
+def test_pre_filter_drops_past_event():
+    event = _norm_event(start_offset_days=-1)
+    event["name"] = "Founder Pitch"
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_drops_event_beyond_window():
+    event = _norm_event(start_offset_days=8)
+    event["name"] = "Founder Demo"
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_drops_online_luma_event():
+    event = _norm_event(name="VC Pitch Night", location_type="online")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_drops_lifestyle_keyword():
+    event = _norm_event(name="Yoga and Networking for Tech People")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_tnt_bypasses_lifestyle_drop():
+    event = _norm_event(name="Yoga and Networking for Tech People", source="tnt")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 1
+
+
+def test_pre_filter_drops_no_startup_keywords():
+    event = _norm_event(name="Monthly Book Club")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_tnt_bypasses_keyword_gate():
+    event = _norm_event(name="Monthly Book Club", source="tnt")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 1
+
+
+def test_pre_filter_drops_duplicate_url():
+    event = _norm_event(name="Founder Dinner", url="https://lu.ma/dup")
+    memory = {"processed_urls": [{"url": "https://lu.ma/dup", "date_seen": date.today().isoformat()}],
+              "last_run": None}
+    result = events.pre_filter([event], memory, DEFAULT_CONFIG)
+    assert len(result) == 0
+
+
+def test_pre_filter_run_word_boundary_not_substring():
+    event = _norm_event(name="Founders Running Club")
+    result = events.pre_filter([event], EMPTY_MEMORY, DEFAULT_CONFIG)
+    assert len(result) == 1

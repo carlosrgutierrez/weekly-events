@@ -86,3 +86,45 @@ def test_split_message_over_limit():
     assert len(chunks) == 2
     assert "A" in chunks[0]
     assert "B" in chunks[1]
+
+
+from unittest.mock import patch, MagicMock
+
+
+def _luma_entry(name="Founder Dinner", url="abc123", start_at="2026-05-13T18:00:00Z",
+                location_type="offline"):
+    return {
+        "event": {
+            "name": name, "url": url, "start_at": start_at,
+            "timezone": "America/New_York", "location_type": location_type,
+            "geo_address_info": {"city_state": "Boston, MA"},
+        },
+        "ticket_info": {"require_approval": False, "spots_remaining": None, "is_sold_out": False},
+        "guest_count": 30,
+        "calendar": {"name": "Underscore VC", "description_short": "VC events",
+                     "verified_at": "2025-01-01", "luma_plus_active": True},
+        "hosts": [{"name": "Host A", "bio_short": "Investor"}],
+        "featured_guests": [],
+    }
+
+
+def test_fetch_luma_returns_list_on_success():
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "entries": [_luma_entry()],
+        "has_more": False,
+        "next_cursor": None,
+    }
+    mock_resp.raise_for_status = MagicMock()
+    with patch("events.requests.get", return_value=mock_resp):
+        result = events.fetch_luma_events({"geo_latitude": 42.36, "geo_longitude": -71.06,
+                                           "geo_radius_km": 30, "window_days": 7})
+    assert len(result) == 1
+    assert result[0]["event"]["name"] == "Founder Dinner"
+
+
+def test_fetch_luma_returns_empty_on_error():
+    with patch("events.requests.get", side_effect=Exception("timeout")):
+        result = events.fetch_luma_events({"geo_latitude": 42.36, "geo_longitude": -71.06,
+                                           "geo_radius_km": 30, "window_days": 7})
+    assert result == []

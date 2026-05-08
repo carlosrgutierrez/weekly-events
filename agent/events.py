@@ -208,3 +208,54 @@ def _split_message(message: str, max_len: int = 1900) -> list:
     if current_blocks:
         chunks.append("\n\n".join(current_blocks))
     return chunks
+
+
+# ── FETCH — Luma ───────────────────────────────────────────────────────────────
+
+def fetch_luma_events(config: dict) -> list:
+    events_out = []
+    cursor = None
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    window_end = now_utc + timedelta(days=config["window_days"])
+
+    while True:
+        params = {
+            "geo_latitude": config["geo_latitude"],
+            "geo_longitude": config["geo_longitude"],
+            "geo_radius_km": config["geo_radius_km"],
+            "pagination_limit": 50,
+        }
+        if cursor:
+            params["pagination_cursor"] = cursor
+
+        try:
+            resp = requests.get(LUMA_API, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"[LUMA] Fetch error: {e}")
+            break
+
+        entries = data.get("entries", [])
+        has_more = data.get("has_more", False)
+        cursor = data.get("next_cursor")
+        stop_paginating = False
+
+        for entry in entries:
+            start_at = entry.get("event", {}).get("start_at", "")
+            try:
+                start_dt = datetime.fromisoformat(
+                    start_at.replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+                if start_dt > window_end:
+                    stop_paginating = True
+                    break
+            except (ValueError, AttributeError):
+                pass
+            events_out.append(entry)
+
+        if not has_more or not cursor or stop_paginating:
+            break
+
+    print(f"[LUMA] Fetched {len(events_out)} raw entries")
+    return events_out

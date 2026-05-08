@@ -27,7 +27,6 @@ INJECTION_PATTERNS = [
     r"new\s+instructions?\s*:",
     r"<\s*system\s*>",
     r"prompt\s*injection",
-    r"act\s+as\s+(a\s+)?",
 ]
 
 ALLOWED_URL_DOMAINS = ["lu.ma", "luma.com", "partiful.com", "tnt.so", "eventbrite.com"]
@@ -123,12 +122,16 @@ def call_groq(system: str, user: str) -> str:
         ],
         temperature=0,
     )
-    return response.choices[0].message.content.strip()
+    content = response.choices[0].message.content
+    return (content or "").strip()
 
 
 def parse_json_response(text: str, fallback):
     try:
         cleaned = re.sub(r"```(?:json)?\s*", "", text).strip().rstrip("`").strip()
+        match = re.search(r"[\[{]", cleaned)
+        if match:
+            cleaned = cleaned[match.start():]
         return json.loads(cleaned)
     except (json.JSONDecodeError, ValueError):
         print(f"[WARN] Failed to parse JSON: {text[:200]}")

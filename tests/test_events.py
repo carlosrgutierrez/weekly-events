@@ -128,3 +128,46 @@ def test_fetch_luma_returns_empty_on_error():
         result = events.fetch_luma_events({"geo_latitude": 42.36, "geo_longitude": -71.06,
                                            "geo_radius_km": 30, "window_days": 7})
     assert result == []
+
+
+TNT_SAMPLE_HTML = """
+<html><body>
+  <ul>
+    <li>
+      <span class="date">Tue May 27</span>
+      <a href="https://lu.ma/abc123">TNT Demo Day Spring 2026</a>
+    </li>
+    <li>
+      <span class="date">Thu May 15</span>
+      <a href="https://partiful.com/e/xyz789">MIT Pitch Night</a>
+    </li>
+    <li>
+      <span class="date">Fri May 16</span>
+      <a href="https://instagram.com/post">Not an event</a>
+    </li>
+  </ul>
+</body></html>
+"""
+
+
+def test_fetch_tnt_returns_luma_and_partiful_links():
+    mock_resp = MagicMock()
+    mock_resp.text = TNT_SAMPLE_HTML
+    mock_resp.raise_for_status = MagicMock()
+    with patch("events.requests.get", return_value=mock_resp):
+        result = events.fetch_tnt_events({"tnt_enabled": True})
+    urls = [e["url"] for e in result]
+    assert "https://lu.ma/abc123" in urls
+    assert "https://partiful.com/e/xyz789" in urls
+    assert not any("instagram" in u for u in urls)
+
+
+def test_fetch_tnt_disabled_returns_empty():
+    result = events.fetch_tnt_events({"tnt_enabled": False})
+    assert result == []
+
+
+def test_fetch_tnt_returns_empty_on_error():
+    with patch("events.requests.get", side_effect=Exception("timeout")):
+        result = events.fetch_tnt_events({"tnt_enabled": True})
+    assert result == []

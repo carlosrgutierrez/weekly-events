@@ -259,3 +259,46 @@ def fetch_luma_events(config: dict) -> list:
 
     print(f"[LUMA] Fetched {len(events_out)} raw entries")
     return events_out
+
+
+# ── FETCH — TNT ────────────────────────────────────────────────────────────────
+
+def fetch_tnt_events(config: dict) -> list:
+    if not config.get("tnt_enabled", True):
+        return []
+    try:
+        resp = requests.get(
+            TNT_URL, timeout=10,
+            headers={"User-Agent": "startup-intel/1.0"},
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[TNT] Fetch error: {e}")
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+    seen_urls = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if not any(d in href for d in ALLOWED_URL_DOMAINS):
+            continue
+        if href in seen_urls:
+            continue
+        name = a.get_text(strip=True)
+        if not name or len(name) < 5:
+            continue
+        parent = a.find_parent()
+        date_text = parent.get_text(separator=" ", strip=True)[:200] if parent else ""
+
+        results.append({
+            "name": name[:MAX_NAME_CHARS],
+            "url": href,
+            "date_text": date_text,
+            "source": "tnt",
+        })
+        seen_urls.add(href)
+
+    print(f"[TNT] Scraped {len(results)} raw entries")
+    return results

@@ -2,8 +2,6 @@
 
 A weekly Discord bot that finds Boston startup ecosystem events, scores them for relevance to IMS (Imaginary Space), and posts the best ones every Monday morning.
 
-**Live repo:** `https://github.com/drozrzd/weekly-events` (running on Carlos's GitHub)
-
 ---
 
 ## What It Does
@@ -116,7 +114,7 @@ Examples:
 
 **To reset the memory** (start fresh, re-post all current events):
 
-1. Go to `https://github.com/drozrzd/weekly-events/blob/main/agent/memory.json`
+1. Go to `https://github.com/carlosrgutierrez/weekly-events/blob/main/agent/memory.json`
 2. Click the pencil icon (Edit)
 3. Replace the content with: `{ "processed_urls": [], "last_run": null }`
 4. Click Commit changes
@@ -290,36 +288,11 @@ if config.get("meetup_enabled", False):
 - Always return `None` if name or url is missing — `main()` skips `None` automatically
 - `start_at` must be UTC ISO format — the 6:30pm filter and date window both depend on this
 - `source` should be a short lowercase string (used for debugging logs)
-
----
-
-## Running Locally
-
-```bash
-cd /Users/droz/Documents/boston-ecosystem-events
-
-# Install dependencies
-python3 -m venv venv && source venv/bin/activate
-pip install -r agent/requirements.txt
-
-# Set up .env (copy from startup-news project)
-cp ../startup-news/agent/.env agent/.env
-
-# Dry run — full pipeline, no Discord post, no memory write
-DRY_RUN=true python3 agent/events.py
-
-# Run tests
-python3 -m pytest tests/test_events.py -v
-
-# Live run (posts to Discord, updates memory)
-python3 agent/events.py
-```
-
 ---
 
 ## Triggering a Manual Run on GitHub
 
-1. Go to `https://github.com/drozrzd/weekly-events/actions`
+1. Go to `https://github.com/carlosrgutierrez/weekly-events/actions`
 2. Click **Weekly Boston Ecosystem Events** on the left
 3. Click **Run workflow** → **Run workflow**
 

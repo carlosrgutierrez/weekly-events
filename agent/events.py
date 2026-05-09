@@ -752,7 +752,7 @@ def format_message(event_list: list, intro_line: str = "") -> str:
     if intro_line:
         blocks.append(intro_line)
     for event in sorted_events:
-        block = f"{event['short_name']}\n{event['time_str']} {event['day_str']}\n{event['url']}"
+        block = f"{event['short_name']}\n{event['time_str']} {event['day_str']}\n<{event['url']}>"
         blocks.append(block)
     return "\n\n".join(blocks)
 

@@ -2,7 +2,7 @@ name: Weekly Boston Ecosystem Events
 
 on:
   schedule:
-    - cron: "0 12 * * 1"   # Monday 12pm UTC = 8am EDT / 7am EST (1h buffer for GitHub delays)
+    - cron: "0 10 * * *"   # Monday 12pm UTC = 8am EDT / 7am EST (1h buffer for GitHub delays)
   workflow_dispatch:         # manual trigger for testing
 
 permissions:
